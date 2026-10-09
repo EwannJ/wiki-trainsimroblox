@@ -92,7 +92,7 @@ export async function initTranslation() {
   const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
   const selected = supported ? initialLanguage : "FR";
   setUrlLanguage(selected, true);
-  await applyLanguage(selected, toggle, list, false);
+  await applyLanguage(selected, toggle, list, false, false);
   document.documentElement.classList.remove("translation-pending");
 
   // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
@@ -110,7 +110,7 @@ export async function initTranslation() {
   });
   window.addEventListener("popstate", async () => {
     const requested = languageFromUrl() || (manuallyChosen ? normalizeLanguage(localStorage.getItem("tsr-manual-language") || "FR") : languageFromBrowser());
-    await applyLanguage(requested, toggle, list, false);
+    await applyLanguage(requested, toggle, list, false, false);
   });
 }
 
@@ -163,7 +163,7 @@ function renderLanguages(list, languages) {
     manuallyChosen = true;
     localStorage.setItem("tsr-manual-language", target);
     const toggle = document.querySelector(".lang-toggle");
-    await applyLanguage(target, toggle, list, true);
+    await applyLanguage(target, toggle, list, true, true);
     const wrapper = document.querySelector(".lang");
     wrapper?.classList.remove("open");
     toggle?.setAttribute("aria-expanded", "false");
@@ -231,19 +231,24 @@ function collectTranslatable() {
   return {textNodes, attrs};
 }
 
-async function applyLanguage(target, toggle, list, updateUrl) {
+async function applyLanguage(target, toggle, list, updateUrl, showToast = false) {
   target = normalizeLanguage(target) || "FR";
   const supported = target === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === target);
   if (!supported) target = "FR";
   const oldLabel = toggle?.textContent || "FR";
   if (toggle) { toggle.textContent = "…"; toggle.disabled = true; }
-  let toast = document.querySelector(".translate-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.className = "translate-toast";
-    toast.setAttribute("role", "status");
-    document.body.append(toast);
+
+  let toast = null;
+  if (showToast) {
+    toast = document.querySelector(".translate-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.className = "translate-toast";
+      toast.setAttribute("role", "status");
+      document.body.append(toast);
+    }
   }
+
   try {
     const {textNodes, attrs} = collectTranslatable();
     const values = [...textNodes.map((node) => ORIGINAL_TEXT.get(node)), ...attrs.map((x) => x.value)];
@@ -275,14 +280,21 @@ async function applyLanguage(target, toggle, list, updateUrl) {
     list?.querySelectorAll("[data-lang]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.lang === target)));
     document.documentElement.lang = target.toLowerCase();
     if (updateUrl) setUrlLanguage(target);
-    toast.textContent = `Langue : ${languageNames.get(target) || target}`;
+
+    if (toast) {
+      toast.textContent = `Langue : ${languageNames.get(target) || target}`;
+    }
   } catch (error) {
     console.error("Erreur de traduction DeepL", error);
-    toast.textContent = "Traduction impossible. Vérifie la clé API DeepL sur Vercel.";
+    if (toast) {
+      toast.textContent = "Traduction impossible. Vérifie la clé API DeepL sur Vercel.";
+    }
     if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
     if (toggle) toggle.disabled = false;
     document.documentElement.classList.remove("translation-pending");
-    setTimeout(() => toast.remove(), 2500);
+    if (toast) {
+      setTimeout(() => toast.remove(), 2500);
+    }
   }
 }
