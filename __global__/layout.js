@@ -53,18 +53,6 @@ function initMenus() {
     });
   });
 
-  const lang = document.querySelector(".lang");
-  if (!lang) return;
-  const langToggle = lang.querySelector(".lang-toggle");
-  langToggle.addEventListener("click", () => {
-    langToggle.setAttribute("aria-expanded", lang.classList.toggle("open"));
-  });
-  document.addEventListener("click", (event) => {
-    if (!lang.contains(event.target)) {
-      lang.classList.remove("open");
-      langToggle.setAttribute("aria-expanded", "false");
-    }
-  });
 }
 
 /** Surligne le lien du menu correspondant à la page (seulement si un seul lien correspond). */

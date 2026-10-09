@@ -2,6 +2,49 @@ const ORIGINAL_TEXT = new WeakMap();
 const ORIGINAL_ATTRS = new WeakMap();
 let activeLanguage = "FR";
 let languageNames = new Map([["FR", "Français"]]);
+let targetLanguages = [];
+let manuallyChosen = false;
+
+const LANG_ALIASES = {
+  "EN": "EN-US", "EN-GB": "EN-GB", "EN-US": "EN-US",
+  "PT": "PT-PT", "PT-BR": "PT-BR", "ZH": "ZH-HANS",
+  "ZH-CN": "ZH-HANS", "ZH-SG": "ZH-HANS", "ZH-TW": "ZH-HANT",
+  "ZH-HK": "ZH-HANT", "ZH-MO": "ZH-HANT", "NO": "NB", "NN": "NB"
+};
+
+function normalizeLanguage(raw) {
+  if (!raw) return "";
+  const value = raw.trim().toUpperCase();
+  if (value === "FR" || value === "FR-FR") return "FR";
+  return LANG_ALIASES[value] || value;
+}
+
+function languageFromBrowser() {
+  const prefs = [...(navigator.languages || []), navigator.language || ""];
+  for (const preference of prefs) {
+    const normalized = normalizeLanguage(preference);
+    if (normalized === "FR") return "FR";
+    const base = normalized.split("-")[0];
+    const found = targetLanguages.find((item) => {
+      const code = item.language.toUpperCase();
+      return code === normalized || code === base;
+    });
+    if (found) return found.language.toUpperCase();
+  }
+  return "FR";
+}
+
+function languageFromUrl() {
+  const params = new URLSearchParams(location.search);
+  return params.has("lang") ? normalizeLanguage(params.get("lang")) : "";
+}
+
+function setUrlLanguage(code, replace = false) {
+  const url = new URL(location.href);
+  url.searchParams.set("lang", code.toLowerCase());
+  if (replace) history.replaceState({ ...(history.state || {}), lang: code }, "", url);
+  else history.pushState({ ...(history.state || {}), lang: code }, "", url);
+}
 
 export async function initTranslation() {
   const lang = document.querySelector(".lang");
@@ -9,50 +52,13 @@ export async function initTranslation() {
   const toggle = lang.querySelector(".lang-toggle");
   const search = lang.querySelector(".lang-search");
   const list = lang.querySelector(".lang-list");
-  try {
-    const response = await fetch("/api/deepl-languages");
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const languages = Array.isArray(data.languages) ? data.languages : [];
-    for (const item of languages) languageNames.set(item.language.toUpperCase(), item.name);
-    renderLanguages(list, languages, search);
-  } catch (error) {
-    console.error("Impossible de charger les langues DeepL", error);
-    list.innerHTML = '<div class="lang-empty">Langues indisponibles. Vérifie la configuration DeepL sur Vercel.</div>';
-  }
+  if (!toggle || !search || !list) return;
 
+  // Un seul gestionnaire d'ouverture : le gestionnaire en double dans layout.js a été supprimé.
   toggle.addEventListener("click", () => {
-    toggle.setAttribute("aria-expanded", lang.classList.toggle("open"));
-    if (lang.classList.contains("open")) search.focus();
-  });
-  search.addEventListener("input", () => {
-    const query = search.value.trim().toLocaleLowerCase();
-    list.querySelectorAll(".lang-option").forEach((button) => {
-      button.hidden = !button.dataset.search.includes(query);
-    });
-    const any = [...list.querySelectorAll(".lang-option")].some((button) => !button.hidden);
-    let empty = list.querySelector(".lang-empty");
-    if (!any) {
-      if (!empty) {
-        empty = document.createElement("div");
-        empty.className = "lang-empty";
-        list.append(empty);
-      }
-      empty.textContent = "Aucune langue trouvée.";
-    } else if (empty) empty.remove();
-  });
-  list.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-lang]");
-    if (!button) return;
-    const target = button.dataset.lang;
-    if (target === activeLanguage) {
-      lang.classList.remove("open");
-      toggle.setAttribute("aria-expanded", "false");
-      return;
-    }
-    await translatePage(target, toggle, list);
-    lang.classList.remove("open");
-    toggle.setAttribute("aria-expanded", "false");
+    const open = lang.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) search.focus();
   });
   document.addEventListener("click", (event) => {
     if (!lang.contains(event.target)) {
@@ -60,14 +66,56 @@ export async function initTranslation() {
       toggle.setAttribute("aria-expanded", "false");
     }
   });
+  search.addEventListener("input", () => filterLanguages(list, search.value));
+
+  try {
+    const response = await fetch("/api/deepl-languages");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    targetLanguages = Array.isArray(data.languages) ? data.languages : [];
+    for (const item of targetLanguages) languageNames.set(item.language.toUpperCase(), item.name);
+    renderLanguages(list, targetLanguages);
+  } catch (error) {
+    console.error("Impossible de charger les langues DeepL", error);
+    list.innerHTML = '<div class="lang-empty">Langues indisponibles. Vérifie la configuration DeepL sur Vercel.</div>';
+    // Le français reste disponible même si DeepL ne répond pas.
+    renderLanguages(list, []);
+  }
+
+  const queryLanguage = languageFromUrl();
+  const savedLanguage = localStorage.getItem("tsr-manual-language");
+  const initialLanguage = queryLanguage || (savedLanguage ? normalizeLanguage(savedLanguage) : languageFromBrowser());
+  manuallyChosen = Boolean(queryLanguage || savedLanguage);
+  const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
+  const selected = supported ? initialLanguage : "FR";
+  setUrlLanguage(selected, true);
+  await applyLanguage(selected, toggle, list, false);
+
+  // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href]");
+    if (!link || link.target === "_blank" || event.defaultPrevented || event.button !== 0 ||
+        event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const destination = new URL(link.href, location.href);
+    if (destination.origin !== location.origin || destination.pathname.startsWith("/api/")) return;
+    const explicit = destination.searchParams.get("lang");
+    if (explicit) return;
+    destination.searchParams.set("lang", activeLanguage.toLowerCase());
+    link.href = destination.pathname + destination.search + destination.hash;
+  });
+  window.addEventListener("popstate", async () => {
+    const requested = languageFromUrl() || (manuallyChosen ? normalizeLanguage(localStorage.getItem("tsr-manual-language") || "FR") : languageFromBrowser());
+    await applyLanguage(requested, toggle, list, false);
+  });
 }
 
-function renderLanguages(list, languages, search) {
+function renderLanguages(list, languages) {
   list.innerHTML = "";
   const all = [{language: "FR", name: "Français"}, ...languages];
   for (const item of all) {
     const code = item.language.toUpperCase();
-    if (code === "EN") continue;
+    if (code === "EN" && languageNames.has("EN-US")) continue;
+    if (list.querySelector(`[data-lang="${CSS.escape(code)}"]`)) continue;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "lang-option";
@@ -82,7 +130,35 @@ function renderLanguages(list, languages, search) {
     button.append(short, name);
     list.append(button);
   }
-  if (!list.children.length) list.innerHTML = '<div class="lang-empty">Aucune langue disponible.</div>';
+  list.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-lang]");
+    if (!button) return;
+    const target = button.dataset.lang;
+    manuallyChosen = true;
+    localStorage.setItem("tsr-manual-language", target);
+    const toggle = document.querySelector(".lang-toggle");
+    await applyLanguage(target, toggle, list, true);
+    const wrapper = document.querySelector(".lang");
+    wrapper?.classList.remove("open");
+    toggle?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function filterLanguages(list, rawQuery) {
+  const query = rawQuery.trim().toLocaleLowerCase();
+  list.querySelectorAll(".lang-option").forEach((button) => {
+    button.hidden = !button.dataset.search.includes(query);
+  });
+  const any = [...list.querySelectorAll(".lang-option")].some((button) => !button.hidden);
+  let empty = list.querySelector(".lang-empty");
+  if (!any) {
+    if (!empty) {
+      empty = document.createElement("div");
+      empty.className = "lang-empty";
+      list.append(empty);
+    }
+    empty.textContent = "Aucune langue trouvée.";
+  } else if (empty) empty.remove();
 }
 
 function collectTranslatable() {
@@ -91,39 +167,40 @@ function collectTranslatable() {
     acceptNode(node) {
       if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
       const parent = node.parentElement;
-      if (!parent || parent.closest('script,style,noscript,code,pre,kbd,[translate="no"],.lang')) return NodeFilter.FILTER_REJECT;
+      if (!parent || parent.closest('script,style,noscript,code,pre,kbd,[translate="no"],.notranslate,.lang,[data-no-translate]')) return NodeFilter.FILTER_REJECT;
       if (!ORIGINAL_TEXT.has(node)) ORIGINAL_TEXT.set(node, node.nodeValue);
       return NodeFilter.FILTER_ACCEPT;
     }
   });
   while (walker.nextNode()) textNodes.push(walker.currentNode);
+
   const attrs = [];
   document.querySelectorAll("title,[placeholder],[aria-label],[title],img[alt],input[value]").forEach((el) => {
-    if (el.closest('.lang,[translate="no"]')) return;
+    if (el.closest('.lang,[translate="no"],.notranslate,[data-no-translate]')) return;
     for (const attr of ["placeholder", "aria-label", "title", "alt", "value"]) {
       if (!el.hasAttribute(attr)) continue;
-      const key = `${attr}`;
       let saved = ORIGINAL_ATTRS.get(el);
       if (!saved) { saved = {}; ORIGINAL_ATTRS.set(el, saved); }
-      if (!(key in saved)) saved[key] = el.getAttribute(attr);
-      if (saved[key] && /[^\W\d_]/u.test(saved[key])) attrs.push({el, attr, value: saved[key]});
+      if (!(attr in saved)) saved[attr] = el.getAttribute(attr);
+      if (saved[attr] && /[^\W\d_]/u.test(saved[attr])) attrs.push({el, attr, value: saved[attr]});
     }
   });
   const title = document.querySelector("title");
   if (title) {
-    if (!ORIGINAL_ATTRS.has(title)) ORIGINAL_ATTRS.set(title, {});
-    const saved = ORIGINAL_ATTRS.get(title);
+    let saved = ORIGINAL_ATTRS.get(title);
+    if (!saved) { saved = {}; ORIGINAL_ATTRS.set(title, saved); }
     if (!("textContent" in saved)) saved.textContent = title.textContent;
     attrs.push({el: title, attr: "textContent", value: saved.textContent});
   }
   return {textNodes, attrs};
 }
 
-async function translatePage(target, toggle, list) {
-  const oldText = toggle.textContent;
-  toggle.textContent = "…";
-  toggle.disabled = true;
-  document.documentElement.classList.add("translating");
+async function applyLanguage(target, toggle, list, updateUrl) {
+  target = normalizeLanguage(target) || "FR";
+  const supported = target === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === target);
+  if (!supported) target = "FR";
+  const oldLabel = toggle?.textContent || "FR";
+  if (toggle) { toggle.textContent = "…"; toggle.disabled = true; }
   let toast = document.querySelector(".translate-toast");
   if (!toast) {
     toast = document.createElement("div");
@@ -131,23 +208,25 @@ async function translatePage(target, toggle, list) {
     toast.setAttribute("role", "status");
     document.body.append(toast);
   }
-  toast.textContent = "Traduction en cours…";
   try {
     const {textNodes, attrs} = collectTranslatable();
     const values = [...textNodes.map((node) => ORIGINAL_TEXT.get(node)), ...attrs.map((x) => x.value)];
-    const translated = [];
-    for (let i = 0; i < values.length; i += 50) {
-      const response = await fetch("/api/deepl-translate", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({texts: values.slice(i, i + 50), target_lang: target})
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${response.status}`);
+    let translated = values;
+    if (target !== "FR" && values.length) {
+      translated = [];
+      for (let i = 0; i < values.length; i += 50) {
+        const response = await fetch("/api/deepl-translate", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({texts: values.slice(i, i + 50), target_lang: target})
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        translated.push(...result.translations);
       }
-      const result = await response.json();
-      translated.push(...result.translations);
     }
     textNodes.forEach((node, i) => { node.nodeValue = translated[i] ?? ORIGINAL_TEXT.get(node); });
     attrs.forEach((item, i) => {
@@ -156,18 +235,17 @@ async function translatePage(target, toggle, list) {
       else item.el.setAttribute(item.attr, value);
     });
     activeLanguage = target;
-    toggle.textContent = target === "FR" ? "FR" : target;
-    list.querySelectorAll("[data-lang]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.lang === target)));
+    if (toggle) toggle.textContent = target === "FR" ? "FR" : target;
+    list?.querySelectorAll("[data-lang]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.lang === target)));
     document.documentElement.lang = target.toLowerCase();
+    if (updateUrl) setUrlLanguage(target);
     toast.textContent = `Langue : ${languageNames.get(target) || target}`;
   } catch (error) {
     console.error("Erreur de traduction DeepL", error);
     toast.textContent = "Traduction impossible. Vérifie la clé API DeepL sur Vercel.";
+    if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
-    toggle.disabled = false;
-    if (activeLanguage === "FR") toggle.textContent = "FR";
-    else if (toggle.textContent === "…") toggle.textContent = oldText;
-    document.documentElement.classList.remove("translating");
-    setTimeout(() => toast.remove(), 3500);
+    if (toggle) toggle.disabled = false;
+    setTimeout(() => toast.remove(), 2500);
   }
 }
