@@ -81,7 +81,6 @@ export async function initTranslation() {
   } catch (error) {
     console.error("Impossible de charger les langues DeepL", error);
     list.innerHTML = '<div class="lang-empty">Langues indisponibles. Vérifie la configuration DeepL sur Vercel.</div>';
-    // Le français reste disponible même si DeepL ne répond pas.
     renderLanguages(list, []);
   }
 
@@ -91,8 +90,16 @@ export async function initTranslation() {
   manuallyChosen = Boolean(queryLanguage || savedLanguage);
   const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
   const selected = supported ? initialLanguage : "FR";
+
+  // Active la protection anti-FOUT si une traduction autre que FR est nécessaire
+  if (selected !== "FR") {
+    document.documentElement.classList.add("translation-pending");
+  }
+
   setUrlLanguage(selected, true);
   await applyLanguage(selected, toggle, list, false, false);
+  
+  // Révèle la page traduite
   document.documentElement.classList.remove("translation-pending");
 
   // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
@@ -110,19 +117,21 @@ export async function initTranslation() {
   });
   window.addEventListener("popstate", async () => {
     const requested = languageFromUrl() || (manuallyChosen ? normalizeLanguage(localStorage.getItem("tsr-manual-language") || "FR") : languageFromBrowser());
+    if (requested !== "FR") {
+      document.documentElement.classList.add("translation-pending");
+    }
     await applyLanguage(requested, toggle, list, false, false);
+    document.documentElement.classList.remove("translation-pending");
   });
 }
 
 function renderLanguages(list, languages) {
   list.innerHTML = "";
   
-  // Tri alphabétique des langues cibles selon leur nom
   const sortedLanguages = [...languages].sort((a, b) => 
     a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' })
   );
 
-  // Le français reste la première langue de la liste
   const all = [{language: "FR", name: "Français"}, ...sortedLanguages];
 
   for (const item of all) {
@@ -134,7 +143,6 @@ function renderLanguages(list, languages) {
     button.type = "button";
     button.className = "lang-option";
     button.dataset.lang = code;
-    // On stocke le code ET le nom pour la recherche
     button.dataset.search = `${code} ${item.name}`.toLowerCase();
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(code === activeLanguage));
@@ -148,7 +156,6 @@ function renderLanguages(list, languages) {
     list.append(button);
   }
 
-  // Appliquer le filtre si du texte est déjà présent dans la barre de recherche
   const searchInput = document.querySelector(".lang-search");
   if (searchInput && searchInput.value) {
     filterLanguages(list, searchInput.value);
@@ -163,7 +170,13 @@ function renderLanguages(list, languages) {
     manuallyChosen = true;
     localStorage.setItem("tsr-manual-language", target);
     const toggle = document.querySelector(".lang-toggle");
+    
+    if (target !== "FR") {
+      document.documentElement.classList.add("translation-pending");
+    }
     await applyLanguage(target, toggle, list, true, true);
+    document.documentElement.classList.remove("translation-pending");
+
     const wrapper = document.querySelector(".lang");
     wrapper?.classList.remove("open");
     toggle?.setAttribute("aria-expanded", "false");
@@ -176,7 +189,6 @@ function filterLanguages(list, rawQuery) {
   
   options.forEach((button) => {
     const searchData = button.dataset.search || "";
-    // Masquer ou afficher le bouton selon la recherche
     const matches = searchData.includes(query);
     button.style.display = matches ? "" : "none";
     button.hidden = !matches;
@@ -282,7 +294,7 @@ async function applyLanguage(target, toggle, list, updateUrl, showToast = false)
     if (updateUrl) setUrlLanguage(target);
 
     if (toast) {
-      toast.textContent = `Langue : ${languageNames.get(target) || target}`;
+      toast.textContent = `Language : ${languageNames.get(target) || target}`;
     }
   } catch (error) {
     console.error("Erreur de traduction DeepL", error);
