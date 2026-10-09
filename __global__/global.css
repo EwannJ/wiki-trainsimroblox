@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
 
-/* Anti-FOUT : Masque le contenu pendant la traduction initiale */
+/* Anti-FOUT centralisé : masque le body pendant la traduction initiale */
 html.translation-pending body {
-    opacity: 0;
-    pointer-events: none;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 body {
@@ -18,7 +18,7 @@ body {
     color: #eef0ff;
     font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
-    transition: opacity 0.2s ease-in-out;
+    transition: opacity 0.25s ease-in-out;
 }
 
 main {

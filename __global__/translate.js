@@ -56,7 +56,6 @@ export async function initTranslation() {
   const list = lang.querySelector(".lang-list");
   if (!toggle || !search || !list) return;
 
-  // Un seul gestionnaire d'ouverture
   toggle.addEventListener("click", () => {
     const open = lang.classList.toggle("open");
     toggle.setAttribute("aria-expanded", String(open));
@@ -91,18 +90,12 @@ export async function initTranslation() {
   const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
   const selected = supported ? initialLanguage : "FR";
 
-  // Active la protection anti-FOUT si une traduction autre que FR est nécessaire
-  if (selected !== "FR") {
-    document.documentElement.classList.add("translation-pending");
-  }
-
   setUrlLanguage(selected, true);
   await applyLanguage(selected, toggle, list, false, false);
-  
-  // Révèle la page traduite
+
+  // Révèle le contenu uniquement après l'application effective de la traduction
   document.documentElement.classList.remove("translation-pending");
 
-  // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href]");
     if (!link || link.target === "_blank" || event.defaultPrevented || event.button !== 0 ||
@@ -115,6 +108,7 @@ export async function initTranslation() {
     else destination.searchParams.set("lang", activeLanguage.toLowerCase());
     link.href = destination.pathname + destination.search + destination.hash;
   });
+
   window.addEventListener("popstate", async () => {
     const requested = languageFromUrl() || (manuallyChosen ? normalizeLanguage(localStorage.getItem("tsr-manual-language") || "FR") : languageFromBrowser());
     if (requested !== "FR") {
@@ -304,7 +298,6 @@ async function applyLanguage(target, toggle, list, updateUrl, showToast = false)
     if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
     if (toggle) toggle.disabled = false;
-    document.documentElement.classList.remove("translation-pending");
     if (toast) {
       setTimeout(() => toast.remove(), 2500);
     }
