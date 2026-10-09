@@ -56,7 +56,6 @@ export async function initTranslation() {
   const list = lang.querySelector(".lang-list");
   if (!toggle || !search || !list) return;
 
-  // Un seul gestionnaire d'ouverture
   toggle.addEventListener("click", () => {
     const open = lang.classList.toggle("open");
     toggle.setAttribute("aria-expanded", String(open));
@@ -81,7 +80,6 @@ export async function initTranslation() {
   } catch (error) {
     console.error("Impossible de charger les langues DeepL", error);
     list.innerHTML = '<div class="lang-empty">Langues indisponibles. Vérifie la configuration DeepL sur Vercel.</div>';
-    // Le français reste disponible même si DeepL ne répond pas.
     renderLanguages(list, []);
   }
 
@@ -91,11 +89,13 @@ export async function initTranslation() {
   manuallyChosen = Boolean(queryLanguage || savedLanguage);
   const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
   const selected = supported ? initialLanguage : "FR";
+
   setUrlLanguage(selected, true);
   await applyLanguage(selected, toggle, list, false, false);
+
+  // Révèle le contenu uniquement après l'application effective de la traduction
   document.documentElement.classList.remove("translation-pending");
 
-  // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href]");
     if (!link || link.target === "_blank" || event.defaultPrevented || event.button !== 0 ||
@@ -108,21 +108,24 @@ export async function initTranslation() {
     else destination.searchParams.set("lang", activeLanguage.toLowerCase());
     link.href = destination.pathname + destination.search + destination.hash;
   });
+
   window.addEventListener("popstate", async () => {
     const requested = languageFromUrl() || (manuallyChosen ? normalizeLanguage(localStorage.getItem("tsr-manual-language") || "FR") : languageFromBrowser());
+    if (requested !== "FR") {
+      document.documentElement.classList.add("translation-pending");
+    }
     await applyLanguage(requested, toggle, list, false, false);
+    document.documentElement.classList.remove("translation-pending");
   });
 }
 
 function renderLanguages(list, languages) {
   list.innerHTML = "";
   
-  // Tri alphabétique des langues cibles selon leur nom
   const sortedLanguages = [...languages].sort((a, b) => 
     a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' })
   );
 
-  // Le français reste la première langue de la liste
   const all = [{language: "FR", name: "Français"}, ...sortedLanguages];
 
   for (const item of all) {
@@ -134,7 +137,6 @@ function renderLanguages(list, languages) {
     button.type = "button";
     button.className = "lang-option";
     button.dataset.lang = code;
-    // On stocke le code ET le nom pour la recherche
     button.dataset.search = `${code} ${item.name}`.toLowerCase();
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(code === activeLanguage));
@@ -148,7 +150,6 @@ function renderLanguages(list, languages) {
     list.append(button);
   }
 
-  // Appliquer le filtre si du texte est déjà présent dans la barre de recherche
   const searchInput = document.querySelector(".lang-search");
   if (searchInput && searchInput.value) {
     filterLanguages(list, searchInput.value);
@@ -163,7 +164,13 @@ function renderLanguages(list, languages) {
     manuallyChosen = true;
     localStorage.setItem("tsr-manual-language", target);
     const toggle = document.querySelector(".lang-toggle");
+    
+    if (target !== "FR") {
+      document.documentElement.classList.add("translation-pending");
+    }
     await applyLanguage(target, toggle, list, true, true);
+    document.documentElement.classList.remove("translation-pending");
+
     const wrapper = document.querySelector(".lang");
     wrapper?.classList.remove("open");
     toggle?.setAttribute("aria-expanded", "false");
@@ -176,7 +183,6 @@ function filterLanguages(list, rawQuery) {
   
   options.forEach((button) => {
     const searchData = button.dataset.search || "";
-    // Masquer ou afficher le bouton selon la recherche
     const matches = searchData.includes(query);
     button.style.display = matches ? "" : "none";
     button.hidden = !matches;
@@ -292,7 +298,6 @@ async function applyLanguage(target, toggle, list, updateUrl, showToast = false)
     if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
     if (toggle) toggle.disabled = false;
-    document.documentElement.classList.remove("translation-pending");
     if (toast) {
       setTimeout(() => toast.remove(), 2500);
     }

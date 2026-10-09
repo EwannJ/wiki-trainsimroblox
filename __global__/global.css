@@ -1,5 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
 
+/* Anti-FOUT centralisé : masque le body pendant la traduction initiale */
+html.translation-pending body {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 body {
     display: flex;
     flex-direction: column;
@@ -8,10 +14,11 @@ body {
     background:
         radial-gradient(900px 500px at 85% -10%, rgba(92, 124, 255, 0.16), transparent 60%),
         #070a24;
-        background-repeat: no-repeat;
+    background-repeat: no-repeat;
     color: #eef0ff;
     font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    transition: opacity 0.25s ease-in-out;
 }
 
 main {
