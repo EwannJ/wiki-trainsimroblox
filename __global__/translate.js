@@ -56,7 +56,7 @@ export async function initTranslation() {
   const list = lang.querySelector(".lang-list");
   if (!toggle || !search || !list) return;
 
-  // Un seul gestionnaire d'ouverture : le gestionnaire en double dans layout.js a été supprimé.
+  // Un seul gestionnaire d'ouverture
   toggle.addEventListener("click", () => {
     const open = lang.classList.toggle("open");
     toggle.setAttribute("aria-expanded", String(open));
@@ -116,25 +116,44 @@ export async function initTranslation() {
 
 function renderLanguages(list, languages) {
   list.innerHTML = "";
-  const all = [{language: "FR", name: "Français"}, ...languages];
+  
+  // Tri alphabétique des langues cibles selon leur nom
+  const sortedLanguages = [...languages].sort((a, b) => 
+    a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' })
+  );
+
+  // Le français reste la première langue de la liste
+  const all = [{language: "FR", name: "Français"}, ...sortedLanguages];
+
   for (const item of all) {
     const code = item.language.toUpperCase();
     if (code === "EN" && languageNames.has("EN-US")) continue;
     if (list.querySelector(`[data-lang="${CSS.escape(code)}"]`)) continue;
+    
     const button = document.createElement("button");
     button.type = "button";
     button.className = "lang-option";
     button.dataset.lang = code;
-    button.dataset.search = `${code} ${item.name}`.toLocaleLowerCase();
+    // On stocke le code ET le nom pour la recherche
+    button.dataset.search = `${code} ${item.name}`.toLowerCase();
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(code === activeLanguage));
+    
     const short = document.createElement("b");
     short.textContent = code;
     const name = document.createElement("span");
     name.textContent = item.name;
+    
     button.append(short, name);
     list.append(button);
   }
+
+  // Appliquer le filtre si du texte est déjà présent dans la barre de recherche
+  const searchInput = document.querySelector(".lang-search");
+  if (searchInput && searchInput.value) {
+    filterLanguages(list, searchInput.value);
+  }
+
   if (list.dataset.languageClickBound === "true") return;
   list.dataset.languageClickBound = "true";
   list.addEventListener("click", async (event) => {
@@ -152,20 +171,30 @@ function renderLanguages(list, languages) {
 }
 
 function filterLanguages(list, rawQuery) {
-  const query = rawQuery.trim().toLocaleLowerCase();
-  list.querySelectorAll(".lang-option").forEach((button) => {
-    button.hidden = !button.dataset.search.includes(query);
+  const query = rawQuery.trim().toLowerCase();
+  const options = list.querySelectorAll(".lang-option");
+  
+  options.forEach((button) => {
+    const searchData = button.dataset.search || "";
+    // Masquer ou afficher le bouton selon la recherche
+    const matches = searchData.includes(query);
+    button.style.display = matches ? "" : "none";
+    button.hidden = !matches;
   });
-  const any = [...list.querySelectorAll(".lang-option")].some((button) => !button.hidden);
+
+  const hasResults = [...options].some((button) => !button.hidden);
   let empty = list.querySelector(".lang-empty");
-  if (!any) {
+
+  if (!hasResults) {
     if (!empty) {
       empty = document.createElement("div");
       empty.className = "lang-empty";
       list.append(empty);
     }
     empty.textContent = "Aucune langue trouvée.";
-  } else if (empty) empty.remove();
+  } else if (empty) {
+    empty.remove();
+  }
 }
 
 function collectTranslatable() {
