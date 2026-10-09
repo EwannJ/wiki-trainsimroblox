@@ -54,11 +54,9 @@ function languageFromUrl() {
 
 function setUrlLanguage(code, replace = false) {
   const url = new URL(location.href);
-  if (normalizeLanguage(code) === "FR") url.searchParams.delete("lang");
-  else url.searchParams.set("lang", code.toLowerCase());
-  const state = { ...(history.state || {}), lang: normalizeLanguage(code) || "FR" };
-  if (replace) history.replaceState(state, "", url);
-  else history.pushState(state, "", url);
+  url.searchParams.set("lang", code.toLowerCase());
+  if (replace) history.replaceState({ ...(history.state || {}), lang: code }, "", url);
+  else history.pushState({ ...(history.state || {}), lang: code }, "", url);
 }
 
 export async function initTranslation() {
@@ -81,7 +79,6 @@ export async function initTranslation() {
     }
   });
   search.addEventListener("input", () => filterLanguages(list, search.value));
-  search.addEventListener("search", () => filterLanguages(list, search.value));
 
   try {
     const response = await fetch("/api/deepl-languages");
@@ -106,10 +103,14 @@ export async function initTranslation() {
   const supported = initialLanguage === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === initialLanguage);
   const selected = supported ? initialLanguage : "FR";
   setUrlLanguage(selected, true);
+<<<<<<< HEAD
   
   // Rendu initial sans bulle de notification (isUserAction = false)
   await applyLanguage(selected, toggle, list, false, false);
   document.documentElement.classList.remove("translation-pending");
+=======
+  await applyLanguage(selected, toggle, list, false);
+>>>>>>> parent of a8d1a09 (Correction de l'interface de traduction 2)
 
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href]");
@@ -119,8 +120,7 @@ export async function initTranslation() {
     if (destination.origin !== location.origin || destination.pathname.startsWith("/api/")) return;
     const explicit = destination.searchParams.get("lang");
     if (explicit) return;
-    if (activeLanguage === "FR") destination.searchParams.delete("lang");
-    else destination.searchParams.set("lang", activeLanguage.toLowerCase());
+    destination.searchParams.set("lang", activeLanguage.toLowerCase());
     link.href = destination.pathname + destination.search + destination.hash;
   });
 
@@ -162,10 +162,13 @@ function renderLanguages(list, languages) {
     button.append(short, name);
     list.append(button);
   }
+<<<<<<< HEAD
 
   if (list.dataset.languageClickBound === "true") return;
   list.dataset.languageClickBound = "true";
   
+=======
+>>>>>>> parent of a8d1a09 (Correction de l'interface de traduction 2)
   list.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-lang]");
     if (!button) return;
@@ -295,6 +298,10 @@ async function applyLanguage(target, toggle, list, updateUrl, isUserAction = fal
     if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
     if (toggle) toggle.disabled = false;
+<<<<<<< HEAD
     document.documentElement.classList.remove("translation-pending");
+=======
+    setTimeout(() => toast.remove(), 2500);
+>>>>>>> parent of a8d1a09 (Correction de l'interface de traduction 2)
   }
 }
