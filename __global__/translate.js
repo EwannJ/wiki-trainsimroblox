@@ -41,9 +41,11 @@ function languageFromUrl() {
 
 function setUrlLanguage(code, replace = false) {
   const url = new URL(location.href);
-  url.searchParams.set("lang", code.toLowerCase());
-  if (replace) history.replaceState({ ...(history.state || {}), lang: code }, "", url);
-  else history.pushState({ ...(history.state || {}), lang: code }, "", url);
+  if (normalizeLanguage(code) === "FR") url.searchParams.delete("lang");
+  else url.searchParams.set("lang", code.toLowerCase());
+  const state = { ...(history.state || {}), lang: normalizeLanguage(code) || "FR" };
+  if (replace) history.replaceState(state, "", url);
+  else history.pushState(state, "", url);
 }
 
 export async function initTranslation() {
@@ -67,6 +69,7 @@ export async function initTranslation() {
     }
   });
   search.addEventListener("input", () => filterLanguages(list, search.value));
+  search.addEventListener("search", () => filterLanguages(list, search.value));
 
   try {
     const response = await fetch("/api/deepl-languages");
@@ -90,6 +93,7 @@ export async function initTranslation() {
   const selected = supported ? initialLanguage : "FR";
   setUrlLanguage(selected, true);
   await applyLanguage(selected, toggle, list, false);
+  document.documentElement.classList.remove("translation-pending");
 
   // Garder la langue sur les liens internes et la réappliquer sur retour/précédent.
   document.addEventListener("click", (event) => {
@@ -100,7 +104,8 @@ export async function initTranslation() {
     if (destination.origin !== location.origin || destination.pathname.startsWith("/api/")) return;
     const explicit = destination.searchParams.get("lang");
     if (explicit) return;
-    destination.searchParams.set("lang", activeLanguage.toLowerCase());
+    if (activeLanguage === "FR") destination.searchParams.delete("lang");
+    else destination.searchParams.set("lang", activeLanguage.toLowerCase());
     link.href = destination.pathname + destination.search + destination.hash;
   });
   window.addEventListener("popstate", async () => {
@@ -130,6 +135,8 @@ function renderLanguages(list, languages) {
     button.append(short, name);
     list.append(button);
   }
+  if (list.dataset.languageClickBound === "true") return;
+  list.dataset.languageClickBound = "true";
   list.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-lang]");
     if (!button) return;
@@ -246,6 +253,7 @@ async function applyLanguage(target, toggle, list, updateUrl) {
     if (toggle) toggle.textContent = oldLabel === "…" ? "FR" : oldLabel;
   } finally {
     if (toggle) toggle.disabled = false;
+    document.documentElement.classList.remove("translation-pending");
     setTimeout(() => toast.remove(), 2500);
   }
 }
