@@ -1,17 +1,13 @@
 /**
  * Injecte la topbar et le footer communs dans chaque page, puis démarre la traduction.
+ *
+ * Dans une page il suffit de mettre :
+ *   <div id="site-topbar"></div>   ...   <div id="site-footer"></div>
+ *   <script src="/__global__/layout.js" defer></script>
+ *
+ * Le contenu vient de /__global__/topbar.html et /__global__/footer.html (un seul fichier chacun).
  */
 (async () => {
-  // Détection immédiate de la langue pour éviter le clignotement (anti-FOUT)
-  const params = new URLSearchParams(window.location.search);
-  const urlLang = params.get('lang');
-  const savedLang = localStorage.getItem('tsr-manual-language');
-  const target = (urlLang || savedLang || '').toUpperCase();
-
-  if (target && target !== 'FR' && target !== 'FR-FR') {
-    document.documentElement.classList.add('translation-pending');
-  }
-
   const parts = [
     ["site-topbar", "/__global__/topbar.html"],
     ["site-footer", "/__global__/footer.html"],
@@ -36,10 +32,9 @@
 
   try {
     const { initTranslation } = await import("/__global__/translate.js");
-    await initTranslation();
+    initTranslation();
   } catch (err) {
     console.error("Traduction indisponible", err);
-    document.documentElement.classList.remove("translation-pending");
   }
 })();
 
@@ -57,6 +52,7 @@ function initMenus() {
       button.setAttribute("aria-expanded", button.parentElement.classList.toggle("open"));
     });
   });
+
 }
 
 /** Surligne le lien du menu correspondant à la page (seulement si un seul lien correspond). */
