@@ -282,7 +282,7 @@ async function applyLanguage(target, toggle, list, updateUrl, showToast = false)
     if (updateUrl) setUrlLanguage(target);
 
     if (toast) {
-      toast.textContent = `Langue : ${languageNames.get(target) || target}`;
+      toast.textContent = `Language : ${languageNames.get(target) || target}`;
     }
   } catch (error) {
     console.error("Erreur de traduction DeepL", error);
