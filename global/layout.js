@@ -1,16 +1,7 @@
-/**
- * Injecte la topbar et le footer communs dans chaque page, puis démarre la traduction.
- *
- * Dans une page il suffit de mettre :
- *   <div id="site-topbar"></div>   ...   <div id="site-footer"></div>
- *   <script src="/__global__/layout.js" defer></script>
- *
- * Le contenu vient de /__global__/topbar.html et /__global__/footer.html (un seul fichier chacun).
- */
 (async () => {
   const parts = [
-    ["site-topbar", "/__global__/topbar.html"],
-    ["site-footer", "/__global__/footer.html"],
+    ["site-topbar", "/global/topbar.html"],
+    ["site-footer", "/globalfooter.html"],
   ];
 
   await Promise.all(
@@ -31,7 +22,7 @@
   markActiveLink();
 
   try {
-    const { initTranslation } = await import("/__global__/translate.js");
+    const { initTranslation } = await import("/global/translate.js");
     initTranslation();
   } catch (err) {
     console.error("Traduction indisponible", err);

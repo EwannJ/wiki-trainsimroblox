@@ -191,7 +191,7 @@ function filterLanguages(list, rawQuery) {
       empty.className = "lang-empty";
       list.append(empty);
     }
-    empty.textContent = "Aucune langue trouvée.";
+    empty.textContent = "No founded language";
   } else if (empty) {
     empty.remove();
   }
