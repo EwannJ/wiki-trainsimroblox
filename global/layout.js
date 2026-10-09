@@ -1,7 +1,7 @@
 (async () => {
   const parts = [
     ["site-topbar", "/global/topbar.html"],
-    ["site-footer", "/globalfooter.html"],
+    ["site-footer", "/global/footer.html"],
   ];
 
   await Promise.all(
