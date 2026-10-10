@@ -26,7 +26,6 @@
     initTranslation();
   } catch (err) {
     console.error("Traduction indisponible", err);
-    document.documentElement.classList.remove("translation-pending");
   }
 })();
 

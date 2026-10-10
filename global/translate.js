@@ -12,18 +12,6 @@ const LANG_ALIASES = {
   "ZH-HK": "ZH-HANT", "ZH-MO": "ZH-HANT", "NO": "NB", "NN": "NB"
 };
 
-// Nom d'une langue écrit dans cette langue (ex. DE → « Deutsch », JA → « 日本語 »).
-function nativeLanguageName(code, fallback) {
-  try {
-    const tag = code.replace(/_/g, "-");
-    const name = new Intl.DisplayNames([tag], { type: "language" }).of(tag);
-    if (name && name.toLowerCase() !== tag.toLowerCase()) {
-      return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1);
-    }
-  } catch (error) { /* navigateur sans Intl.DisplayNames : on garde le nom DeepL */ }
-  return fallback;
-}
-
 function normalizeLanguage(raw) {
   if (!raw) return "";
   const value = raw.trim().toUpperCase();
@@ -61,13 +49,12 @@ function setUrlLanguage(code, replace = false) {
 }
 
 export async function initTranslation() {
-  const reveal = () => document.documentElement.classList.remove("translation-pending");
   const lang = document.querySelector(".lang");
-  if (!lang) return reveal();
+  if (!lang) return;
   const toggle = lang.querySelector(".lang-toggle");
   const search = lang.querySelector(".lang-search");
   const list = lang.querySelector(".lang-list");
-  if (!toggle || !search || !list) return reveal();
+  if (!toggle || !search || !list) return;
 
   // Un seul gestionnaire d'ouverture
   toggle.addEventListener("click", () => {
@@ -89,11 +76,7 @@ export async function initTranslation() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     targetLanguages = Array.isArray(data.languages) ? data.languages : [];
-    for (const item of targetLanguages) {
-      item.englishName = item.name;
-      item.name = nativeLanguageName(item.language, item.name);
-      languageNames.set(item.language.toUpperCase(), item.name);
-    }
+    for (const item of targetLanguages) languageNames.set(item.language.toUpperCase(), item.name);
     renderLanguages(list, targetLanguages);
   } catch (error) {
     console.error("Impossible de charger les langues DeepL", error);
@@ -135,8 +118,8 @@ function renderLanguages(list, languages) {
   list.innerHTML = "";
   
   // Tri alphabétique des langues cibles selon leur nom
-  const sortedLanguages = [...languages].sort((a, b) =>
-    (a.englishName || a.name).localeCompare(b.englishName || b.name, 'en', { sensitivity: 'base' })
+  const sortedLanguages = [...languages].sort((a, b) => 
+    a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' })
   );
 
   // Le français reste la première langue de la liste
@@ -152,7 +135,7 @@ function renderLanguages(list, languages) {
     button.className = "lang-option";
     button.dataset.lang = code;
     // On stocke le code ET le nom pour la recherche
-    button.dataset.search = `${code} ${item.name} ${item.englishName || ""}`.toLowerCase();
+    button.dataset.search = `${code} ${item.name}`.toLowerCase();
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(code === activeLanguage));
     
@@ -160,7 +143,6 @@ function renderLanguages(list, languages) {
     short.textContent = code;
     const name = document.createElement("span");
     name.textContent = item.name;
-    name.lang = code.toLowerCase();
     
     button.append(short, name);
     list.append(button);
@@ -249,14 +231,6 @@ function collectTranslatable() {
   return {textNodes, attrs};
 }
 
-const CACHE_PREFIX = "tsr-tr:";
-function readCache(target) {
-  try { return JSON.parse(sessionStorage.getItem(CACHE_PREFIX + target) || "{}"); } catch (e) { return {}; }
-}
-function writeCache(target, cache) {
-  try { sessionStorage.setItem(CACHE_PREFIX + target, JSON.stringify(cache)); } catch (e) { /* quota ou stockage indisponible */ }
-}
-
 async function applyLanguage(target, toggle, list, updateUrl, showToast = false) {
   target = normalizeLanguage(target) || "FR";
   const supported = target === "FR" || targetLanguages.some((item) => item.language.toUpperCase() === target);
@@ -280,27 +254,20 @@ async function applyLanguage(target, toggle, list, updateUrl, showToast = false)
     const values = [...textNodes.map((node) => ORIGINAL_TEXT.get(node)), ...attrs.map((x) => x.value)];
     let translated = values;
     if (target !== "FR" && values.length) {
-      // Les textes déjà traduits (dans cette session) sont relus depuis le cache : pas d'attente, pas d'appel API.
-      const cache = readCache(target);
-      translated = values.map((value) => cache[value]);
-      const missing = [...new Set(values.filter((_, i) => translated[i] === undefined))];
-      const chunks = [];
-      for (let i = 0; i < missing.length; i += 50) chunks.push(missing.slice(i, i + 50));
-      const results = await Promise.all(chunks.map(async (texts) => {
+      translated = [];
+      for (let i = 0; i < values.length; i += 50) {
         const response = await fetch("/api/deepl-translate", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({texts, target_lang: target})
+          body: JSON.stringify({texts: values.slice(i, i + 50), target_lang: target})
         });
         if (!response.ok) {
           const err = await response.json().catch(() => ({}));
           throw new Error(err.error || `HTTP ${response.status}`);
         }
-        return (await response.json()).translations;
-      }));
-      chunks.forEach((texts, c) => texts.forEach((text, i) => { cache[text] = results[c][i]; }));
-      if (missing.length) writeCache(target, cache);
-      translated = values.map((value) => cache[value] ?? value);
+        const result = await response.json();
+        translated.push(...result.translations);
+      }
     }
     textNodes.forEach((node, i) => { node.nodeValue = translated[i] ?? ORIGINAL_TEXT.get(node); });
     attrs.forEach((item, i) => {
