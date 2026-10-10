@@ -20,6 +20,12 @@ import urllib.request
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# OPTION : False = la langue reste visible dans l'URL (?lang=de) et suit les liens internes.
+#          (sans ?lang= dans l'URL : langue du navigateur)
+#          True  = l'URL reste propre : si ?lang=xx est présent (menu, lien partagé), la langue est mémorisée dans le cookie "lang"
+#                  puis ?lang=xx est retiré de l'URL (redirection). Sans cookies, la langue n'est alors pas conservée d'une page à l'autre.
+HIDE_LANG_PARAM = False
+
 DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "")
 # les clés gratuites finissent par ":fx"
 _DEEPL_HOST = "https://api-free.deepl.com" if DEEPL_API_KEY.endswith(":fx") else "https://api.deepl.com"
@@ -170,19 +176,29 @@ _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "me
 # éléments envoyés d'un bloc à DeepL (avec leurs balises internes) ; le texte hors de ceux-là est envoyé tel quel
 _TEXT_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "td", "th", "li", "a", "button", "label", "span", "b", "i",
               "strong", "em", "small", "summary", "dt", "dd", "caption", "figcaption", "blockquote"}
-_ATTR_RE = re.compile(r'\b(aria-label|placeholder|title|alt)="([^"]*)"')
+_ATTR_RE = re.compile(r'(?<![\w-])(aria-label|placeholder|title|alt)="([^"]*)"')
+# attribut HTML translate="no" (guillemets simples ou absents acceptés) ; la classe notranslate fait pareil
+_NO = r"""(?:\btranslate\s*=\s*["']?no\b|\bclass\s*=\s*["'][^"']*\bnotranslate\b)"""
+_NO_RE = re.compile(_NO, re.I)
 _TITLE_RE = re.compile(r"<title(\s[^>]*)?>(.*?)</title>", re.S)
 _LETTER_RE = re.compile(r"[^\W\d_]")
 _BODY_RE = re.compile(r"<body\b[^>]*>")
 
 
 def _is_no_translate(attrs: str) -> bool:
-    return 'translate="no"' in attrs or "notranslate" in attrs
+    return bool(_NO_RE.search(attrs))
+
+
+def _attr_matches(text: str):
+    """Attributs à traduire ; ceux d'une balise translate="no" restent tels quels."""
+    for tag in _TAG_RE.finditer(text):
+        if not _is_no_translate(tag.group(3)):
+            yield from _ATTR_RE.finditer(tag.group(3))
 
 
 def _has_text(fragment: str) -> bool:
     # le texte des éléments translate="no" ne compte pas
-    fragment = re.sub(r'<(\w+)\b[^>]*translate="no"[^>]*>.*?</\1>', "", fragment, flags=re.S)
+    fragment = re.sub(r"<(\w+)\b[^>]*?" + _NO + r"[^>]*>.*?</\1>", "", fragment, flags=re.S | re.I)
     return bool(_LETTER_RE.search(html.unescape(re.sub(r"<[^>]+>", "", fragment))))
 
 
@@ -240,7 +256,7 @@ def _translate(raw: str, target: str):
         pos = b
     gaps.append(body[pos:])
     attrs = sorted({
-        html.unescape(m.group(2)) for part in gaps for m in _ATTR_RE.finditer(part)
+        html.unescape(m.group(2)) for part in gaps for m in _attr_matches(part)
         if len(_LETTER_RE.findall(m.group(2))) >= 2 and not m.group(2).isupper()
     })
     title = _TITLE_RE.search(head)
@@ -261,7 +277,9 @@ def _translate(raw: str, target: str):
     attr_map = {src: html.escape(dst, quote=True) for src, dst in zip(attrs, done_plain)}
 
     def swap(text: str) -> str:
-        return _ATTR_RE.sub(lambda m: f'{m.group(1)}="{attr_map.get(html.unescape(m.group(2)), m.group(2))}"', text)
+        def swap_attr(m):
+            return f'{m.group(1)}="{attr_map.get(html.unescape(m.group(2)), m.group(2))}"'
+        return _TAG_RE.sub(lambda t: t.group(0) if _is_no_translate(t.group(3)) else _ATTR_RE.sub(swap_attr, t.group(0)), text)
 
     out, pos, translated = [], 0, iter(done_blocks)
     for a, b, tr in spans:
@@ -369,7 +387,8 @@ def _render(page_path: str, lang: str, link_param: str) -> tuple:
     )
     page = page.replace('<div id="site-topbar"></div>', topbar).replace('<div id="site-footer"></div>', parts["footer"])
     page = _HREF_RE.sub(lambda m: _link_with_lang(m, link_param), page)
-    page = page.replace('<html lang="fr"', f'<html lang="{lang.lower()}"', 1)
+    marker = " data-hide-lang" if HIDE_LANG_PARAM else ""  # lu par translate.js : le menu n'ajoute alors pas ?lang= à l'URL
+    page = page.replace('<html lang="fr"', f'<html lang="{lang.lower()}"{marker}', 1)
     return page, source, lang
 
 
@@ -392,11 +411,16 @@ class handler(BaseHTTPRequestHandler):
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
         lang, explicit = _choose_language(
             query.get("lang", [""])[0],
-            cookie["lang"].value if "lang" in cookie else "",
+            cookie["lang"].value if HIDE_LANG_PARAM and "lang" in cookie else "",  # cookie lu seulement si l'URL reste propre
             self.headers.get("Accept-Language", ""),
         )
+        if HIDE_LANG_PARAM and explicit:
+            # ?lang= valide : on le range dans le cookie et on le retire de l'URL
+            rest = [(k, v) for k, values in query.items() if k not in ("lang", "p") for v in values]
+            return self.redirect("/" + page_path + ("?" + urllib.parse.urlencode(rest) if rest else ""), lang.lower())
         # la langue suit les liens internes : ?lang=xx (pour le français, seulement s'il a été demandé dans l'URL)
-        link_param = f"lang={lang.lower()}" if lang != "FR" or explicit else ""
+        # False : ?lang= présent -> repris dans les liens internes ; absent -> chaque page suit la langue du navigateur
+        link_param = f"lang={lang.lower()}" if explicit and not HIDE_LANG_PARAM else ""
         body, source, served = _render(page_path, lang, link_param)
         # URL avec ?lang= : même page pour tout le monde, le CDN peut la garder ; sinon dépend du navigateur
         shared = explicit and served == lang
@@ -404,6 +428,14 @@ class handler(BaseHTTPRequestHandler):
         timing = f'app;dur={(time.perf_counter() - started) * 1000:.0f}, cold;desc="{int(_cold[0])}", src;desc="{source}"'
         _cold[0] = False
         self.send_page(200, body, cache, "" if shared else "Accept-Language, Cookie", timing)
+
+    def redirect(self, location: str, lang: str):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Set-Cookie", f"lang={lang}; Path=/; Max-Age=31536000; SameSite=Lax")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def send_page(self, status: int, body: str, cache: str, vary: str, timing: str = ""):
         data = body.encode("utf-8")

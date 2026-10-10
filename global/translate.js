@@ -21,14 +21,17 @@ export function initTranslation() {
   search.addEventListener("input", () => filterLanguages(list, search.value));
   search.addEventListener("search", () => filterLanguages(list, search.value));
 
-  // Choix de langue : on le retient (cookie lu par le serveur) et on recharge la page, déjà traduite
+  // Choix de langue : on recharge la page, déjà traduite par le serveur
   list.addEventListener("click", (event) => {
     const button = event.target.closest("[data-lang]");
     if (!button) return;
     const code = button.dataset.lang.toLowerCase();
-    document.cookie = `lang=${code}; path=/; max-age=31536000; SameSite=Lax`;
     const url = new URL(location.href);
-    url.searchParams.set("lang", code);
+    // option HIDE_LANG_PARAM de api/translate.py : True = cookie et URL propre, False = ?lang= dans l'URL
+    if (document.documentElement.hasAttribute("data-hide-lang")) {
+      document.cookie = `lang=${code}; path=/; max-age=31536000; SameSite=Lax`;
+      url.searchParams.delete("lang");
+    } else url.searchParams.set("lang", code);
     location.assign(url);
   });
 }
