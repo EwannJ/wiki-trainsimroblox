@@ -494,6 +494,8 @@ html { scroll-padding-top: calc(var(--topbar) + 16px); scrollbar-gutter: stable}
 
 /* Indicateur pendant la traduction */
 html.translating body { cursor: progress; }
+/* Masque la page tant que la traduction n'est pas prête (évite le clignotement FR → langue) */
+html.translation-pending body { visibility: hidden; }
 .translate-toast {
   position: fixed; left: 50%; bottom: 20px; z-index: 100;
   transform: translateX(-50%);
