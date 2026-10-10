@@ -34,7 +34,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY_TSR") or ""
 _CONTEXT = (
     "Wiki of a French train simulation game on Roblox (Train Simulator Roblox, TSR): trains, roles, "
     "help guides and a community of players."
-    "'Formations' = Trainings, formazioni, formaciones, etc"
 )
 
 # ---------------------------------------------------------------- langues
