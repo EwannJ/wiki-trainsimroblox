@@ -33,9 +33,11 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL_TSR") or "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY_TSR") or ""
 _CONTEXT = (
     "Wiki of a French train simulation game on Roblox (Train Simulator Roblox, TSR): trains, roles, "
-    "help guides and a community of players."
-    "Capitalize the first letter of words or phrases that do not form complete sentences and remove the unnecessary symbol before the word if it makes no sense in the translation (e.g., -Gallery)"
+    "help guides and a community of players. Short texts such as menu entries, buttons and titles are labels, "
+    "not sentences: translate them as labels."
 )
+# le contexte de DeepL n'est pas traduit et n'est pas facturé : il peut être long (limite choisie ici, en caractères)
+_CONTEXT_LIMIT = 3000
 
 # ---------------------------------------------------------------- langues
 
@@ -139,8 +141,8 @@ def _language_options(active: str) -> str:
 
 # ---------------------------------------------------------------- DeepL
 
-def _deepl(texts: list, target: str, as_html: bool):
-    """Traduit par lots ; None au moindre échec."""
+def _deepl(texts: list, target: str, as_html: bool, context: str = _CONTEXT):
+    """Traduit par lots (le contexte est envoyé avec chaque lot) ; None au moindre échec."""
     batches, batch, size = [], [], 0
     for text in texts:
         if batch and (len(batch) == 50 or size + len(text) > 20000):
@@ -152,7 +154,7 @@ def _deepl(texts: list, target: str, as_html: bool):
         batches.append(batch)
     out = []
     for batch in batches:
-        data = [("text", t) for t in batch] + [("target_lang", target), ("source_lang", "FR"), ("context", _CONTEXT)]
+        data = [("text", t) for t in batch] + [("target_lang", target), ("source_lang", "FR"), ("context", context)]
         if as_html:
             data.append(("tag_handling", "html"))
         req = urllib.request.Request(f"{_DEEPL_HOST}/v2/translate", data=urllib.parse.urlencode(data).encode(), method="POST")
@@ -238,11 +240,40 @@ def _split(body: str) -> list:
     return sorted(spans)
 
 
+def _visible_text(fragment: str) -> str:
+    """Texte lisible d'un fragment HTML (sans balises, scripts ni styles), espaces réduits."""
+    text = re.sub(r"<[^>]+>", " ", _HIDDEN_RE.sub(" ", fragment))
+    return re.sub(r"\s+", " ", re.sub(r"%%\w+%%", " ", html.unescape(text))).strip()  # %%jetons%% = pas du texte
+
+
+def _build_context(raw: str, nav: str) -> str:
+    """Contexte envoyé à DeepL avec chaque lot : le site, son menu et le texte de la page traduite."""
+    context = f"{_CONTEXT} Site menu: {nav}. Text of the page being translated: {_visible_text(raw)}"
+    return context[:_CONTEXT_LIMIT]
+
+
+# icônes et flèches (éléments translate="no" sans lettre) en début ou fin de bloc : DeepL ne les voit pas, donc ne les déplace pas
+_LEAD_RE = re.compile(r"^(?:\s*<(\w+)\b[^>]*?" + _NO + r"[^>]*>[^<]*</\1>)+", re.I)
+_TRAIL_RE = re.compile(r"(?:<(\w+)\b[^>]*?" + _NO + r"[^>]*>[^<]*</\1>\s*)+$", re.I)
+
+
+def _peel(fragment: str) -> tuple:
+    """(début, milieu, fin) : retire les éléments translate="no" décoratifs aux deux bouts du bloc."""
+    lead = trail = ""
+    m = _LEAD_RE.match(fragment)
+    if m and not _LETTER_RE.search(_visible_text(m.group(0))):
+        lead, fragment = m.group(0), fragment[m.end():]
+    m = _TRAIL_RE.search(fragment)
+    if m and not _LETTER_RE.search(_visible_text(m.group(0))):
+        trail, fragment = m.group(0), fragment[:m.start()]
+    return lead, fragment, trail
+
+
 def _mark_no_translate(fragment: str) -> str:
     return re.sub(r"<(code|kbd|pre)\b(?![^>]*translate=)", r'<\1 translate="no"', fragment)
 
 
-def _translate(raw: str, target: str):
+def _translate(raw: str, target: str, context: str = _CONTEXT):
     """Fragment HTML français -> traduit, mêmes balises et mêmes %%jetons%% ; None si DeepL échoue."""
     cut = _BODY_RE.search(raw)
     head, body = (raw[:cut.end()], raw[cut.end():]) if cut else ("", raw)
@@ -264,13 +295,15 @@ def _translate(raw: str, target: str):
     title = title if title and not _is_no_translate(title.group(1) or "") else None
     plain_in = ([html.unescape(title.group(2))] if title else []) + attrs
 
+    peeled = [_peel(body[a:b]) for a, b in blocks]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        job_blocks = pool.submit(_deepl, [_mark_no_translate(body[a:b]) for a, b in blocks], target, True) if blocks else None
-        job_plain = pool.submit(_deepl, plain_in, target, False) if plain_in else None
+        job_blocks = pool.submit(_deepl, [_mark_no_translate(core) for _, core, _ in peeled], target, True, context) if blocks else None
+        job_plain = pool.submit(_deepl, plain_in, target, False, context) if plain_in else None
         done_blocks = job_blocks.result() if job_blocks else []
         done_plain = job_plain.result() if job_plain else []
     if done_blocks is None or done_plain is None:
         return None
+    done_blocks = [lead + text + trail for (lead, _, trail), text in zip(peeled, done_blocks)]
 
     if title:
         head = head.replace(title.group(0), title.group(0).replace(title.group(2), html.escape(done_plain[0]), 1), 1)
@@ -307,9 +340,9 @@ def _sb(method: str, query: dict, payload=None):
         return json.loads(r.read() or b"null")
 
 
-def _cached_translation(name: str, raw: str, lang: str):
+def _cached_translation(name: str, raw: str, lang: str, context: str):
     """(HTML traduit ou None, origine) ; origine = mem, db, deepl ou fail."""
-    fingerprint = "sha256:" + hashlib.sha256(("v1:" + raw).encode()).hexdigest()
+    fingerprint = "sha256:" + hashlib.sha256(("v2:" + context + "\n" + raw).encode()).hexdigest()
     key = (fingerprint, lang)
     if key in _memory:
         return _memory[key], "mem"
@@ -326,7 +359,7 @@ def _cached_translation(name: str, raw: str, lang: str):
             print(f"translate : error 'supabase lookup failed for {name}/{lang} : {e}'")
     if not DEEPL_API_KEY or time.time() - _failed.get(lang, 0) < 60:
         return None, "fail"
-    text = _translate(raw, lang)
+    text = _translate(raw, lang, context)
     if text is None:
         _failed[lang] = time.time()
         return None, "fail"
@@ -373,8 +406,10 @@ def _render(page_path: str, lang: str, link_param: str) -> tuple:
     parts = {"topbar": _read("global/topbar.html"), "footer": _read("global/footer.html"), f"page_{page_path or 'index'}": raw_page}
     source = "fr"
     if lang != "FR":
+        nav = _visible_text(parts["topbar"])
+        contexts = {name: _build_context(raw, nav) for name, raw in parts.items()}
         with ThreadPoolExecutor(max_workers=3) as pool:
-            results = dict(zip(parts, pool.map(lambda item: _cached_translation(item[0], item[1], lang), parts.items())))
+            results = dict(zip(parts, pool.map(lambda item: _cached_translation(item[0], item[1], lang, contexts[item[0]]), parts.items())))
         if any(text is None for text, _ in results.values()):
             lang = "FR"  # DeepL indisponible : version française
         else:
