@@ -21,7 +21,6 @@ import urllib.request
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # OPTION : False = la langue reste visible dans l'URL (?lang=de) et suit les liens internes.
-#          (sans ?lang= dans l'URL : langue du navigateur)
 #          True  = l'URL reste propre : si ?lang=xx est présent (menu, lien partagé), la langue est mémorisée dans le cookie "lang"
 #                  puis ?lang=xx est retiré de l'URL (redirection). Sans cookies, la langue n'est alors pas conservée d'une page à l'autre.
 HIDE_LANG_PARAM = False
@@ -411,7 +410,7 @@ class handler(BaseHTTPRequestHandler):
         cookie = SimpleCookie(self.headers.get("Cookie", ""))
         lang, explicit = _choose_language(
             query.get("lang", [""])[0],
-            cookie["lang"].value if HIDE_LANG_PARAM and "lang" in cookie else "",  # cookie lu seulement si l'URL reste propre
+            cookie["lang"].value if "lang" in cookie else "",
             self.headers.get("Accept-Language", ""),
         )
         if HIDE_LANG_PARAM and explicit:
@@ -419,8 +418,7 @@ class handler(BaseHTTPRequestHandler):
             rest = [(k, v) for k, values in query.items() if k not in ("lang", "p") for v in values]
             return self.redirect("/" + page_path + ("?" + urllib.parse.urlencode(rest) if rest else ""), lang.lower())
         # la langue suit les liens internes : ?lang=xx (pour le français, seulement s'il a été demandé dans l'URL)
-        # False : ?lang= présent -> repris dans les liens internes ; absent -> chaque page suit la langue du navigateur
-        link_param = f"lang={lang.lower()}" if explicit and not HIDE_LANG_PARAM else ""
+        link_param = "" if HIDE_LANG_PARAM else f"lang={lang.lower()}" if lang != "FR" or explicit else ""
         body, source, served = _render(page_path, lang, link_param)
         # URL avec ?lang= : même page pour tout le monde, le CDN peut la garder ; sinon dépend du navigateur
         shared = explicit and served == lang
