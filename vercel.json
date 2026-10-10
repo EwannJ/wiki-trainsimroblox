@@ -1,4 +1,9 @@
 {
-  "cleanUrls": true,
-  "trailingSlash": false
+  "functions": {
+    "api/translate.py": { "includeFiles": "{*.html,**/*.html}", "maxDuration": 60 }
+  },
+  "routes": [
+    { "src": "^/(?!api/|global/)([^.]*?)/?(?:index\\.html)?$", "dest": "/api/translate?p=$1" },
+    { "handle": "filesystem" }
+  ]
 }

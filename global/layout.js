@@ -1,33 +1,9 @@
-(async () => {
-  const parts = [
-    ["site-topbar", "/global/topbar.html"],
-    ["site-footer", "/global/footer.html"],
-  ];
-
-  await Promise.all(
-    parts.map(async ([id, url]) => {
-      const host = document.getElementById(id);
-      if (!host) return;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(res.status);
-        host.innerHTML = await res.text();
-      } catch (err) {
-        console.error(`Impossible de charger ${url}`, err);
-      }
-    })
-  );
-
-  initMenus();
-  markActiveLink();
-
-  try {
-    const { initTranslation } = await import("/global/translate.js");
-    initTranslation();
-  } catch (err) {
-    console.error("Traduction indisponible", err);
-  }
-})();
+// Le haut de page, le pied de page et le menu de langues sont déjà dans le HTML envoyé par api/translate.py
+initMenus();
+markActiveLink();
+import("/global/translate.js")
+  .then((module) => module.initTranslation())
+  .catch((err) => console.error("Menu de langues indisponible", err));
 
 function initMenus() {
   const menuToggle = document.querySelector(".menu-toggle");
