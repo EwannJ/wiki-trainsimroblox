@@ -51,6 +51,8 @@ a {
   color: #eef0ff;
   font-weight: 600;
   transition: transform 0.2s, border-color 0.2s, background 0.2s;
+  position: relative;
+  direction: ltr;
 }
 
 .tile:hover {
