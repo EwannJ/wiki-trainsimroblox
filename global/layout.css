@@ -407,10 +407,6 @@ html { scroll-padding-top: calc(var(--topbar) + 16px); scrollbar-gutter: stable}
   width: 340px;
   max-width: calc(100vw - 32px);
   padding: 10px;
-  align-items: center;
-  display: inline-flex;
-  justify-content: center;
-  text-align: center;
 }
 
 .lang-search {
