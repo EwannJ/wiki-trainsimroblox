@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/translate.py": { "includeFiles": "{*.html,**/*.html}", "maxDuration": 60 }
+    "api/translate.py": { "includeFiles": "{*.html,**/*.html}", "excludeFiles": "{**/*.png,**/*.webp}", "maxDuration": 60 }
   },
   "routes": [
     { "src": "^/(?!api/|global/)([^.]*?)/?(?:index\\.html)?$", "dest": "/api/translate?p=$1" },
