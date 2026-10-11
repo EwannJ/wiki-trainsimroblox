@@ -12,10 +12,17 @@ export function initTranslation() {
     toggle.setAttribute("aria-expanded", String(open));
     if (open) search.focus();
   });
+  const close = () => {
+    lang.classList.remove("open");
+    toggle.setAttribute("aria-expanded", "false");
+  };
   document.addEventListener("click", (event) => {
-    if (!lang.contains(event.target)) {
-      lang.classList.remove("open");
-      toggle.setAttribute("aria-expanded", "false");
+    if (!lang.contains(event.target)) close();
+  });
+  lang.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && lang.classList.contains("open")) {
+      close();
+      toggle.focus();
     }
   });
   search.addEventListener("input", () => filterLanguages(list, search.value));
@@ -55,7 +62,7 @@ function filterLanguages(list, rawQuery) {
       empty.className = "lang-empty";
       list.append(empty);
     }
-    empty.textContent = "No founded language";
+    empty.textContent = "No language found";
   } else if (empty) {
     empty.remove();
   }
