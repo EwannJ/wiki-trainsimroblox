@@ -44,12 +44,85 @@ function initMenus() {
     });
   }
 
+  // sous-menus (mobile) : déroulement animé ; .open garde le sous-menu affiché pendant la fermeture
   document.querySelectorAll(".dropdown-toggle").forEach((button) => {
     button.addEventListener("click", () => {
-      button.setAttribute("aria-expanded", button.parentElement.classList.toggle("open"));
+      const dropdown = button.parentElement;
+      const menu = dropdown.querySelector(".dropdown-menu");
+      const show = button.getAttribute("aria-expanded") !== "true";
+      button.setAttribute("aria-expanded", show);
+
+      if (!menu || reducedMotion()) {
+        dropdown.classList.toggle("open", show);
+        return;
+      }
+      const from = dropdown.classList.contains("open") ? menu.getBoundingClientRect().height : 0;
+      menu._anim?.cancel();
+      if (show) {
+        dropdown.classList.add("open");
+        const natural = menu.getBoundingClientRect().height;
+        animateHeight(menu, from, natural, { natural, fade: true });
+      } else {
+        const natural = menu.scrollHeight;
+        animateHeight(menu, from, 0, { natural, fade: true, done: () => dropdown.classList.remove("open") });
+      }
     });
   });
 }
+
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Anime la hauteur d'un élément de `from` à `to` (px), puis rend la main au CSS. */
+function animateHeight(el, from, to, { natural = Math.max(from, to), fade = false, done } = {}) {
+  el._anim?.cancel();
+  el.style.overflow = "hidden";
+  const keyframes = { height: [`${from}px`, `${to}px`] };
+  if (fade && natural) keyframes.opacity = [from / natural, to / natural];
+  const anim = el.animate(keyframes, {
+    duration: to > from ? 300 : 250,
+    easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+    fill: "forwards",
+  });
+  el._anim = anim;
+  anim.onfinish = () => {
+    if (el._anim !== anim) return;
+    el._anim = null;
+    done?.();
+    anim.cancel();
+    el.style.overflow = "";
+  };
+}
+
+/** Menus déroulants de contenu (<details class="accordion">) : ouverture et fermeture animées.
+    Délégation d'évènement : fonctionne aussi si la page est modifiée après coup (traduction). */
+document.addEventListener("click", (event) => {
+  const summary = event.target.closest("details.accordion > summary");
+  if (!summary || reducedMotion()) return;
+  event.preventDefault();
+
+  const details = summary.parentElement;
+  const chrome = ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"]
+    .reduce((sum, key) => sum + parseFloat(getComputedStyle(details)[key]), 0);
+  const collapsed = summary.getBoundingClientRect().height + chrome;
+  const from = details.getBoundingClientRect().height;
+  const closing = details.open && !details.classList.contains("is-closing");
+
+  details._anim?.cancel();
+  if (closing) {
+    details.classList.add("is-closing");
+    animateHeight(details, from, collapsed, {
+      done: () => {
+        details.open = false;
+        details.classList.remove("is-closing");
+      },
+    });
+  } else {
+    details.classList.remove("is-closing");
+    details.open = true;
+    const natural = details.getBoundingClientRect().height;
+    animateHeight(details, from, natural);
+  }
+});
 
 /** Surligne l'entrée du menu de la page ou de sa rubrique (seulement si une seule entrée correspond). */
 function markActiveLink() {
