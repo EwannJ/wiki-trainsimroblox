@@ -617,3 +617,9 @@ hr {
   border-radius: 9px;
   font-size: 1.05rem;
 }
+
+.dedi {
+  text-align: center;
+  color: grey;
+  font-size: 15px;
+}
