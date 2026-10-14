@@ -623,3 +623,45 @@ hr {
   color: grey;
   font-size: 15px;
 }
+
+table {
+  border-collapse: collapse;
+  border: 0.1px solid white;
+  margin-inline: auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+th {
+  font-size: 16px !important;
+}
+
+th,
+td {
+  padding: 8px 12px;
+  border: 0.1px solid white;
+  text-align: center;
+  vertical-align: center;
+  font-size: 14px;
+}
+
+td .media img {
+  width: 200px;
+  max-width: 100%;
+  margin-inline: auto;
+  border: 0;
+}
+
+td h1 {
+  color: var(--accent);
+  font-size: 19px;
+}
+
+table {
+  gap: 1px !important;
+}
+
+h1.formation {
+  margin: 0;
+  margin-bottom: -32px;
+}
